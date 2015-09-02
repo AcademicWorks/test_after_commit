@@ -5,26 +5,32 @@ end
 
 ActiveRecord::ConnectionAdapters::DatabaseStatements.class_eval do
   def transaction_with_transactional_fixtures(*args)
-    @test_open_transactions ||= 0
-    transaction_without_transactional_fixtures(*args) do
-      begin
-        @test_open_transactions += 1
-        if ActiveRecord::VERSION::MAJOR == 3
-          @_current_transaction_records.push([]) if @_current_transaction_records.empty?
-        end
-        result = yield
-      rescue Exception => e
-        rolled_back = true
-        raise e
-      ensure
+    if $enable_test_after_commit
+      @test_open_transactions ||= 0
+      transaction_without_transactional_fixtures(*args) do
         begin
-          @test_open_transactions -= 1
-          if @test_open_transactions == 0 && !rolled_back
-            test_commit_records
+          @test_open_transactions += 1
+          if ActiveRecord::VERSION::MAJOR == 3
+            @_current_transaction_records.push([]) if @_current_transaction_records.empty?
           end
+          result = yield
+        rescue Exception => e
+          rolled_back = true
+          raise e
         ensure
-          result
+          begin
+            @test_open_transactions -= 1
+            if @test_open_transactions == 0 && !rolled_back
+              test_commit_records
+            end
+          ensure
+            result
+          end
         end
+      end
+    else
+      transaction_without_transactional_fixtures(*args) do
+        yield
       end
     end
   end
